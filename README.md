@@ -8,6 +8,7 @@
 - [Semihosting](#semihosting)
 - [SWO](#swo)
 - [Real Time Terminal (RTT)](#real-time-terminal-rtt)
+- [Summary](#summary)
 
 ## printf
 
@@ -54,6 +55,18 @@ int _write (int file, const void * ptr, size_t len) {
   return len;
 }
 ```
+
+Note that the libc `setbuf` API controls I/O buffering for newlib. By default
+`_write` will be called for every byte. You might want to instead buffer up to
+line ends, by:
+
+```c
+#include <stdio.h>
+setvbuf(stout, NULL, _IOLBF, 0);
+```
+
+See `man setvbuf` or http://www.cplusplus.com/reference/cstdio/setvbuf/ for
+details.
 
 ### Reentrancy
 
@@ -203,3 +216,5 @@ server.
 ## SWO
 
 ## Real Time Terminal (RTT)
+
+## Summary
