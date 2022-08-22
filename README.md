@@ -1,4 +1,4 @@
-# ARM Cortex-M printf Comparison  <!-- omit in toc -->
+# ARM Cortex-M printf Comparison <!-- omit in toc -->
 
 - [printf](#printf)
   - [Redirecting `_write`](#redirecting-_write)
@@ -11,9 +11,8 @@
 - [Redirecting stdio](#redirecting-stdio)
   - [UART](#uart)
   - [Semihosting](#semihosting)
-  - [SWO](#swo)
-  - [Real Time Terminal (RTT)](#real-time-terminal-rtt)
-  - [Summary/Comparison](#summarycomparison)
+  - [Serial Wire Output (SWO)](#serial-wire-output-swo)
+  - [Real Time Transfer (RTT)](#real-time-transfer-rtt)
 
 ## printf
 
@@ -245,17 +244,26 @@ exactly where to move the pointer and where we don't need to.
 This section describes a few approaches for redirecting libc standard
 input/output functions, and compares the tradeoffs each one makes.
 
+| Method      | Advantages                                                                              | Disadvantages                                                                              |
+| ----------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| UART        | - simple, no special host HW needed                                                     | - requires spare UART + pins on target<br/>- can be slow                                   |
+| Semihosting | - no extra HW requirements on target                                                    | - requires a debug probe for the host to use<br/>- _prohibitively_ slow, interrupts target |
+| SWO         | - requires only a single (often specific) spare pin on the target<br/>- relatively fast | - usually needs a debug probe for the host to use<br/>- output only                        |
+| RTT         | - no extra HW requirements on target<br>- relatively fast                               | - requires a debug probe for the host to use<br/>- license may be problematic              |
+
 ### UART
 
 UART: asynchronous serial. Most embedded microcontrollers will have at least
 one.
 
 Pros:
+
 - simple and widely available protocol (lots of available software and hardware
   tools interface to it)
 - doesn't require an attached debugger; you can use it in PROD 😀
 
 Cons:
+
 - requires extra hardware to interface to the PC host, typically (USB to
   asynchronous serial adapter, like the FTDI or CP2102 adapters)
 - requires configuring and using the UART peripheral (if your microcontroller
@@ -293,6 +301,7 @@ Some good descriptions:
 - https://www.keil.com/support/man/docs/armcc/armcc_pge1358787046598.htm
 
 And the reference documentation can be found in:
+
 > ARM Developer Suite (ADS) v1.2 Debug Target Guide, Chapter 5. Semihosting
 
 TLDR, semihosting operates by the target executing the breakpoint instruction with
@@ -303,14 +312,16 @@ The debug probe executes the I/O operation based on the opcode and data, then
 resumes the microcontroller.
 
 Pros:
+
 - only requires SWD connection (SWCLK + SWDIO)
-- built into most debug servers (pyocd, openocd /* TODO confirm */, blackmagic,
+- built into most debug servers (pyocd, openocd /_ TODO confirm _/, blackmagic,
   segger jlink)
 - basic implementation is provided by newlib (no extra user code) and is dead
   simple to use
 - can do lots more than just printf; open, fwrite, read from stdin!
 
 Cons:
+
 - slowwww. really slow.
 - doesn't work when debugger is disconnected (target will be stuck on `bkpt`
   instruction; either a forever hang or a crash depending on cortex-m
@@ -349,12 +360,46 @@ monitor semihosting ioclient 2
 For pyocd, you can pass the `--semihosting` argument when starting the gdb
 server.
 
-As an extra bonus, see here /* TODO!!! */ for a simplified semihosting solution
+As an extra bonus, see here /_ TODO!!! _/ for a simplified semihosting solution
 based on the newlib one that doesn't require linking against `rdimon.specs`, and
 saves some code space.
 
-### SWO
+### Serial Wire Output (SWO)
 
-### Real Time Terminal (RTT)
+A dedicated pin that can be used essentially as a UART for outputting data. It
+can be pretty fast- baud rate often 1/1 of CPU core clock, since it uses the
+TPIU.
 
-### Summary/Comparison
+It is however optional, so might not be available on every chip (most common
+chips like STM32's and nRF chips tend to include it), and requires an extra pin-
+typically routed to the 10-pin ARM debug header.
+
+It's output only, and there's a small bit of code necessary on the target to
+enable routing `printf` to SWO.
+
+A good tutorial including background information here:
+
+https://mcuoneclipse.com/2016/10/17/tutorial-using-single-wire-output-swo-with-arm-cortex-m-and-eclipse/
+
+The debug adapter and software does need to support the protocol. Most debug
+adapters do support it, however (ST-Link's, JLINK, DAPLink, etc).
+
+### Real Time Transfer (RTT)
+
+https://wiki.segger.com/RTT
+
+Segger's RTT reads/writes into a buffer in RAM while the chip is running. It can
+be pretty fast compared to even a fast UART, and is _much_ more efficient than
+Semihosting without requiring any extra pins or hardware.
+
+It also supports both output (target -> host) and input (host -> target).
+
+Segger provides the RTT target implementation, as well as a few tools for using
+RTT on the host. OpenOCD and PyOCD also support the protocol.
+
+The downside is it requires a debug adapter to operate, since it relies on
+reading and writing to memory.
+
+It's also important to understand the implications of enabling this in
+production; be sure your device doesn't get into a bad state if there's no debug
+adapter connected.
